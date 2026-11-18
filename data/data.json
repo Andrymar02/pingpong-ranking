@@ -98,6 +98,27 @@
       "wind": true,
       "date": "2026-11-18",
       "createdAt": 1795011599333
+    },
+    {
+      "id": "mwm86c25mazns",
+      "type": "doppio",
+      "teamA": [
+        "mwm85mtjdkyxv",
+        "mwm6m75ckqf0b"
+      ],
+      "teamB": [
+        "mwm5a5k4k92g1",
+        "mwm6wx21rajez"
+      ],
+      "sets": [
+        [
+          21,
+          18
+        ]
+      ],
+      "wind": false,
+      "date": "2026-11-18",
+      "createdAt": 1795012633229
     }
   ]
 }
