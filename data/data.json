@@ -101,6 +101,8 @@
     },
     {
       "id": "mwm86c25mazns",
+      "createdAt": 1795012633229,
+      "editedAt": 1795013457651,
       "type": "doppio",
       "teamA": [
         "mwm85mtjdkyxv",
@@ -116,9 +118,8 @@
           18
         ]
       ],
-      "wind": false,
-      "date": "2026-11-18",
-      "createdAt": 1795012633229
+      "wind": true,
+      "date": "2026-11-18"
     },
     {
       "id": "mwm8809dwv4f3",
