@@ -96,12 +96,65 @@ if (typeof module !== 'undefined') module.exports = { computeRatings, tally, DEF
 /* =========================================================
    STORAGE: GitHub Contents API oppure locale
    ========================================================= */
-function getConfig() { try { return JSON.parse(localStorage.getItem(CFG_KEY)) || null; } catch { return null; } }
+// Se l'app è pubblicata su GitHub Pages (utente.github.io/repo/) ricava da sola utente e repository:
+// così chiunque la apra (anche dall'icona sulla Home) vede subito la classifica in sola lettura.
+function autoConfig() {
+  if (typeof location === 'undefined') return null;
+  const m = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i);
+  const seg = location.pathname.split('/').filter(Boolean)[0];
+  if (!m || !seg || seg.includes('.')) return null;
+  return { owner: m[1], repo: seg, branch: 'main', path: 'data/data.json', token: '', auto: true };
+}
+function getConfig() {
+  try { const c = JSON.parse(localStorage.getItem(CFG_KEY)); if (c) return c; } catch { }
+  return autoConfig();
+}
+// Legge un link "Link per colleghi" (…#setup=…) e restituisce la configurazione
+function parseSetupLink(text) {
+  const m = String(text || '').match(/#setup=([^\s]+)/);
+  if (!m) return null;
+  try { const cfg = JSON.parse(b64decode(decodeURIComponent(m[1]))); return cfg.owner && cfg.repo ? cfg : null; } catch { return null; }
+}
 function setConfig(c) { if (c) localStorage.setItem(CFG_KEY, JSON.stringify(c)); else localStorage.removeItem(CFG_KEY); }
 function isRemote() { const c = getConfig(); return !!(c && c.owner && c.repo); }
-function apiUrl(c) {
-  const path = (c.path || 'data/data.json').replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+function fileUrl(c, p) {
+  const path = p.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
   return `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/${path}`;
+}
+function apiUrl(c) { return fileUrl(c, c.path || 'data/data.json'); }
+
+/* ---------- password di gruppo ----------
+   Il token viene salvato nel repo (access.json, accanto al file dati) cifrato con AES-GCM;
+   la chiave deriva dalla password di gruppo (PBKDF2-SHA256). Senza password il file è inutile. */
+function accessPath(c) { const p = c.path || 'data/data.json'; return (p.includes('/') ? p.slice(0, p.lastIndexOf('/') + 1) : '') + 'access.json'; }
+const u8b64 = u8 => { let s = ''; for (const b of u8) s += String.fromCharCode(b); return btoa(s); };
+const b64u8 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+async function pwKey(pw, salt, iter) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptToken(token, pw) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), iter = 250000;
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await pwKey(pw, salt, iter), new TextEncoder().encode(token));
+  return { v: 1, kdf: 'PBKDF2-SHA256', iter, salt: u8b64(salt), iv: u8b64(iv), ct: u8b64(new Uint8Array(ct)) };
+}
+async function decryptToken(blob, pw) {
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u8(blob.iv) }, await pwKey(pw, b64u8(blob.salt), blob.iter), b64u8(blob.ct));
+  return new TextDecoder().decode(pt);
+}
+async function loadAccess(c) {
+  const res = await fetch(`${fileUrl(c, accessPath(c))}?ref=${encodeURIComponent(c.branch || 'main')}`, { headers: ghHeaders(c), cache: 'no-store' });
+  if (!res.ok) return null;
+  const j = await res.json();
+  return { blob: JSON.parse(b64decode(j.content)), sha: j.sha };
+}
+async function saveAccess(c, pw) {
+  const blob = await encryptToken(c.token, pw);
+  const cur = await loadAccess(c).catch(() => null);
+  const body = { message: '🔑 Aggiorna password di gruppo', content: b64encode(JSON.stringify(blob, null, 2) + '\n'), branch: c.branch || 'main' };
+  if (cur) body.sha = cur.sha;
+  const res = await fetch(fileUrl(c, accessPath(c)), { method: 'PUT', headers: { ...ghHeaders(c), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await ghError(res));
 }
 function ghHeaders(c) {
   const h = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
@@ -195,6 +248,12 @@ async function refresh(silent = false) {
     setData(r.data);
     if (!isRemote()) banner('📱 <b>Modalità locale</b>: i dati restano solo su questo dispositivo. Collega GitHub in <a href="#" data-goto="settings" style="color:inherit">Impostazioni</a> per condividerli.');
     else if (r.missing) banner('Il file dati non esiste ancora nel repo: verrà creato al primo salvataggio.');
+    else if (!getConfig().token) {
+      state.access = await loadAccess(getConfig()).catch(() => null);
+      banner(state.access
+        ? '👀 <b>Sola lettura</b>. Per inserire partite e giocatori <a href="#" data-unlock style="color:inherit"><b>🔓 inserisci la password del gruppo</b></a> (solo la prima volta).'
+        : '👀 <b>Sola lettura</b>: vedi la classifica aggiornata. Per inserire partite e giocatori aggiungi il token in <a href="#" data-goto="settings" style="color:inherit">Impostazioni</a>.');
+    }
     else banner('');
     if (!silent) toast('Dati aggiornati');
   } catch (e) {
@@ -204,7 +263,32 @@ async function refresh(silent = false) {
   } finally { setBusy(false); render(); }
 }
 
+// Se manca il token ma esiste la password di gruppo, chiedila invece di dare errore
+function needsUnlock() {
+  if (isRemote() && !getConfig().token && state.access) { openUnlock(); return true; }
+  return false;
+}
+function openUnlock() {
+  modalBody.innerHTML = `
+    <div class="modal-head"><h2>🔓 Password del gruppo</h2><button class="icon-btn" data-close>✕</button></div>
+    <p class="help">Scrivila una volta sola: questo dispositivo resterà abilitato a inserire partite e giocatori.</p>
+    <form id="unlockForm"><input type="password" name="pw" placeholder="Password del gruppo" autocomplete="current-password" required>
+      <div class="btns"><button class="btn block" data-busy>Sblocca</button></div></form>`;
+  modal.showModal();
+  setTimeout(() => modalBody.querySelector('input')?.focus(), 50);
+  $('#unlockForm').onsubmit = async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button'); btn.disabled = true; btn.textContent = 'Verifico…';
+    try {
+      const token = await decryptToken(state.access.blob, e.target.pw.value);
+      const c = { ...getConfig(), token }; delete c.auto; setConfig(c);
+      modal.close(); toast('Sbloccato ✓ Ora puoi inserire le partite'); refresh(true);
+    } catch { btn.disabled = false; btn.textContent = 'Sblocca'; toast('Password sbagliata', true); }
+  };
+}
+
 async function mutate(mutator, message, okMsg = 'Salvato ✓') {
+  if (needsUnlock()) return false;
   if (state.busy) return false;
   setBusy(true);
   try {
@@ -440,9 +524,16 @@ function renderSettings() {
   const c = getConfig() || { branch: 'main', path: 'data/data.json' };
   const s = settings();
   view.innerHTML = `
+    <h2>Collegamento rapido</h2>
+    <div class="card"><form id="pasteForm">
+      <p class="help" style="margin-top:0">Hai ricevuto il <b>Link per colleghi</b>? Incollalo qui: utile soprattutto se usi l'app dall'icona sulla Home dell'iPhone.</p>
+      <div class="row"><input type="text" name="link" placeholder="https://…#setup=…" class="grow" autocapitalize="off" autocorrect="off" autocomplete="off">
+      <button class="btn" data-busy>Collega</button></div>
+    </form></div>
+
     <h2>Archivio dati su GitHub</h2>
     <div class="card"><form id="cfgForm">
-      <p class="help" style="margin-top:0">I dati vengono salvati in un file JSON nel tuo repository. Lascia vuoto "Utente" per usare la modalità locale.</p>
+      <p class="help" style="margin-top:0">I dati vengono salvati in un file JSON nel repository. ${c.auto ? 'Utente e repository sono stati riconosciuti dall\'indirizzo del sito: <b>basta incollare il token</b> per poter salvare.' : 'Lascia vuoto "Utente" per usare la modalità locale.'}</p>
       <div class="teams-grid">
         <div><label>Utente / organizzazione</label><input type="text" name="owner" value="${esc(c.owner || '')}" placeholder="mario-rossi" autocapitalize="off" autocorrect="off"></div>
         <div><label>Repository</label><input type="text" name="repo" value="${esc(c.repo || '')}" placeholder="pingpong-ranking" autocapitalize="off" autocorrect="off"></div>
@@ -454,6 +545,15 @@ function renderSettings() {
       <p class="help">Token "fine-grained" limitato a questo repo con permesso <code>Contents: Read and write</code>. Resta salvato solo su questo dispositivo.</p>
       <div class="btns"><button class="btn" data-busy>Salva e collega</button><button type="button" class="btn ghost" id="shareCfg">🔗 Link per colleghi</button></div>
     </form></div>
+
+    ${isRemote() && c.token ? `<h2>Password di gruppo</h2>
+    <div class="card"><form id="groupPwForm">
+      <p class="help" style="margin-top:0">Salva il token nel repository <b>cifrato</b> con una password. I colleghi aprono l'app, la scrivono una volta e possono inserire le partite: niente token da copiare.</p>
+      <label>Nuova password di gruppo</label><input type="password" name="pw" minlength="6" required autocomplete="new-password">
+      <label>Ripeti password</label><input type="password" name="pw2" minlength="6" required autocomplete="new-password">
+      <p class="help">Usa una frase non banale (almeno 8–10 caratteri): chi la conosce può scrivere nel repository. Se cambi il token, salva di nuovo la password.</p>
+      <div class="btns"><button class="btn" data-busy>🔑 Salva password di gruppo</button></div>
+    </form></div>` : ''}
 
     <h2>Parametri classifica</h2>
     <div class="card"><form id="eloForm">
@@ -497,8 +597,25 @@ function renderSettings() {
     await refresh(true);
     if (isRemote() && !$('#banner').classList.contains('err')) toast('Collegato a GitHub ✓');
   };
+  $('#groupPwForm') && ($('#groupPwForm').onsubmit = async e => {
+    e.preventDefault();
+    const { pw, pw2 } = e.target;
+    if (pw.value !== pw2.value) return toast('Le password non coincidono', true);
+    setBusy(true);
+    try { await saveAccess(getConfig(), pw.value); e.target.reset(); toast('Password di gruppo salvata ✓'); }
+    catch (err) { toast('Errore: ' + err.message, true); }
+    finally { setBusy(false); }
+  });
+  $('#pasteForm').onsubmit = async e => {
+    e.preventDefault();
+    const cfg = parseSetupLink(e.target.link.value);
+    if (!cfg) return toast('Link non valido: deve contenere #setup=…', true);
+    delete cfg.auto; setConfig(cfg);
+    await refresh(true);
+    if (!$('#banner').classList.contains('err')) toast('Collegato a GitHub ✓');
+  };
   $('#shareCfg').onclick = async () => {
-    const cfg = getConfig(); if (!cfg) return toast('Prima collega GitHub', true);
+    const cfg = { ...getConfig() }; delete cfg.auto; if (!cfg.owner) return toast('Prima collega GitHub', true); if (!cfg.token) return toast('Prima inserisci il token, così il link permette anche di salvare', true);
     const url = `${location.origin}${location.pathname}#setup=${encodeURIComponent(b64encode(JSON.stringify(cfg)))}`;
     try { if (navigator.share) await navigator.share({ title: 'Ping Pong Ranking', url }); else { await navigator.clipboard.writeText(url); toast('Link copiato negli appunti'); } }
     catch { prompt('Copia questo link:', url); }
@@ -527,12 +644,13 @@ function renderSettings() {
 
 /* ---------- eventi globali ---------- */
 document.querySelector('.tabbar').onclick = e => { const b = e.target.closest('button'); if (b) go(b.dataset.tab); };
-$('#fab').onclick = openNewMatch;
+$('#fab').onclick = () => { if (!needsUnlock()) openNewMatch(); };
 $('#refreshBtn').onclick = () => refresh();
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-mode],[data-player],[data-close],[data-del-match],[data-goto]');
+  const t = e.target.closest('[data-mode],[data-player],[data-close],[data-del-match],[data-goto],[data-unlock]');
   if (!t) return;
-  if (t.dataset.goto) { e.preventDefault(); go(t.dataset.goto); }
+  if (t.dataset.unlock !== undefined) { e.preventDefault(); openUnlock(); }
+  else if (t.dataset.goto) { e.preventDefault(); go(t.dataset.goto); }
   else if (t.dataset.mode && !modal.open) { state.mode = t.dataset.mode; render(); }
   else if (t.dataset.close !== undefined) modal.close();
   else if (t.dataset.player && !modal.open) openPlayer(t.dataset.player);
@@ -549,9 +667,9 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 /* ---------- avvio ---------- */
 (function init() {
-  const m = location.hash.match(/^#setup=(.+)$/);
-  if (m) {
-    try { const cfg = JSON.parse(b64decode(decodeURIComponent(m[1]))); if (cfg.owner && cfg.repo) { setConfig(cfg); toast('Configurazione importata ✓'); } } catch { toast('Link di configurazione non valido', true); }
+  if (location.hash.startsWith('#setup=')) {
+    const cfg = parseSetupLink(location.hash);
+    if (cfg) { delete cfg.auto; setConfig(cfg); toast('Configurazione importata ✓'); } else toast('Link di configurazione non valido', true);
     history.replaceState(null, '', location.pathname + location.search);
   }
   try { const c = JSON.parse(localStorage.getItem(CACHE_KEY)); if (c && isRemote()) setData(normalize(c)); } catch { }

@@ -47,11 +47,18 @@ Dopo circa un minuto l'app sarà su `https://TUO-UTENTE.github.io/pingpong-ranki
 - **Permissions → Repository permissions → Contents**: *Read and write*
 - Scadenza: quella che preferisci (alla scadenza basta generarne uno nuovo)
 
-### 4. Collega l'app
-Apri l'app e vai su **⚙️ Impostazioni**. Inserisci utente, repository (`pingpong-ranking`) e token, poi premi **Salva e collega**.
+### 4. Collega l'app (solo tu, una volta)
+Apri l'app e vai su **⚙️ Impostazioni**. Utente e repository sono già compilati, perché l'app li riconosce dall'indirizzo del sito. Incolla il token e premi **Salva e collega**.
 
-### 5. Condividi con i colleghi
-Sempre in Impostazioni c'è **🔗 Link per colleghi**: genera un link che configura l'app in automatico, token compreso. Mandalo in privato al gruppo, non pubblicarlo.
+### 5. Imposta la password di gruppo
+Sempre in Impostazioni, nel riquadro **Password di gruppo**, scegli una password (una frase non banale) e salvala.
+Il token viene salvato nel repository (`data/access.json`) **cifrato** con quella password.
+
+Ai colleghi basta mandare l'indirizzo dell'app e la password:
+- aprendo l'app vedono subito la classifica, senza configurare niente;
+- la prima volta che premono **+** o aggiungono un giocatore, l'app chiede la password; dopo quella volta non la chiede più su quel dispositivo.
+
+Se cambi il token (ad esempio perché è scaduto), salva di nuovo la password di gruppo.
 
 ### 6. Aggiungi alla schermata Home
 - **iPhone (Safari)**: Condividi → *Aggiungi alla schermata Home*
@@ -60,7 +67,8 @@ Sempre in Impostazioni c'è **🔗 Link per colleghi**: genera un link che confi
 ---
 
 ## Note sulla sicurezza e sulla privacy
-- Il token permette **solo** di scrivere in quel repository. Nel caso peggiore qualcuno può modificare la classifica, ma lo storico dei commit permette sempre di tornare indietro.
+- Il token permette **solo** di scrivere in quel repository. Nel repository è salvato cifrato (AES-GCM con chiave derivata dalla password tramite PBKDF2): senza la password è illeggibile, quindi scegline una non banale.
+- Non scrivere mai il token in chiaro nel codice: GitHub lo rileva nei repository pubblici e lo disattiva automaticamente. Nel caso peggiore qualcuno può modificare la classifica, ma lo storico dei commit permette sempre di tornare indietro.
 - Con il repository pubblico, chiunque abbia il link può **vedere** classifica e nomi.
   Se volete tenerli privati, mettete i dati in un **secondo repository privato** (es. `pingpong-data`) e indicate quello nelle Impostazioni: l'app resta su Pages dal repo pubblico, mentre i dati sono leggibili solo da chi ha il token.
 - Se due persone salvano nello stesso momento, l'app rilegge l'ultima versione e riprova da sola, così nessuna partita va persa.

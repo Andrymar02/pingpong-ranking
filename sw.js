@@ -1,5 +1,5 @@
 // Service worker: rende l'app installabile e utilizzabile anche offline (sola lettura).
-const CACHE = 'pingpong-v1';
+const CACHE = 'pingpong-v3';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.json',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];
 
