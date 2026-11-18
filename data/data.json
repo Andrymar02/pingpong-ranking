@@ -119,6 +119,25 @@
       "wind": false,
       "date": "2026-11-18",
       "createdAt": 1795012633229
+    },
+    {
+      "id": "mwm8809dwv4f3",
+      "type": "singolo",
+      "teamA": [
+        "mwm6wrs1rkhv4"
+      ],
+      "teamB": [
+        "mwm5a5k4k92g1"
+      ],
+      "sets": [
+        [
+          11,
+          2
+        ]
+      ],
+      "wind": true,
+      "date": "2026-11-18",
+      "createdAt": 1795012711249
     }
   ]
 }
