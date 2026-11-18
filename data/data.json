@@ -69,6 +69,25 @@
       "wind": true,
       "date": "2026-11-18",
       "createdAt": 1795010058295
+    },
+    {
+      "id": "mwm7k6atzz193",
+      "type": "singolo",
+      "teamA": [
+        "mwm6wx21rajez"
+      ],
+      "teamB": [
+        "mwm6wrs1rkhv4"
+      ],
+      "sets": [
+        [
+          11,
+          6
+        ]
+      ],
+      "wind": true,
+      "date": "2026-11-18",
+      "createdAt": 1795011599333
     }
   ]
 }
