@@ -8,6 +8,12 @@
     "windFactor": 0.5,
     "marginWeight": 0.5
   },
-  "players": [],
+  "players": [
+    {
+      "id": "mwm5a5k4k92g1",
+      "name": "Andrea M.",
+      "createdAt": 1795007772886
+    }
+  ],
   "matches": []
 }
