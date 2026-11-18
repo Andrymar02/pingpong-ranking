@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "settings": {
+    "startRating": 1500,
+    "kFactor": 32,
+    "provisionalK": 48,
+    "provisionalMatches": 10,
+    "windFactor": 0.5,
+    "marginWeight": 0.5
+  },
+  "players": [],
+  "matches": []
+}
