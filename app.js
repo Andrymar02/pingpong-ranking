@@ -341,7 +341,9 @@ function matchCard(m) {
   const dl = ids => ids.map(id => `<span class="d delta ${d[id] >= 0 ? 'up' : 'down'}">${ids.length > 1 ? esc(pname(id).split(' ')[0]) + ' ' : ''}${signed(d[id] || 0)}</span>`).join('');
   return `<div class="card">
     <div class="match-meta"><span class="tag">${MODES[m.type]}</span>${m.wind ? '<span class="tag wind">💨 Vento</span>' : ''}
-      <span class="grow"></span><button class="btn ghost sm" data-del-match="${m.id}" aria-label="Elimina">🗑</button></div>
+      ${m.editedAt ? '<span class="muted small">modificata</span>' : ''}<span class="grow"></span>
+      <button class="btn ghost sm" data-edit-match="${m.id}" aria-label="Modifica">✏️</button>
+      <button class="btn ghost sm" data-del-match="${m.id}" aria-label="Elimina">🗑</button></div>
     <div class="match-teams">
       <div class="team ${aWin ? 'win' : 'lose'}">${aWin ? '🏆 ' : ''}${teamLabel(m.teamA)}${dl(m.teamA)}</div>
       <div class="score">${t.setsA}–${t.setsB}</div>
@@ -431,16 +433,24 @@ function openPlayer(id) {
 }
 
 /* ---------- NUOVA PARTITA ---------- */
-function openNewMatch() {
-  const players = activePlayers();
+function openNewMatch(editId = null) {
+  const edit = editId ? state.data.matches.find(x => x.id === editId) : null;
+  if (editId && !edit) return toast('Partita non trovata, aggiorna i dati', true);
+  // in modifica restano selezionabili anche i giocatori archiviati che hanno giocato quella partita
+  const players = edit
+    ? [...activePlayers(), ...[...edit.teamA, ...edit.teamB].map(player).filter(p => p && p.archived)]
+    : activePlayers();
   if (players.length < 2) { toast('Servono almeno 2 giocatori: aggiungili in 👥', true); go('players'); return; }
-  const f = { type: state.mode, teamA: ['', ''], teamB: ['', ''], sets: [['', '']], wind: false, date: todayISO() };
+  const f = edit
+    ? { type: edit.type, teamA: [...edit.teamA, '', ''].slice(0, 2), teamB: [...edit.teamB, '', ''].slice(0, 2),
+        sets: edit.sets.map(([a, b]) => [String(a), String(b)]), wind: !!edit.wind, date: edit.date }
+    : { type: state.mode, teamA: ['', ''], teamB: ['', ''], sets: [['', '']], wind: false, date: todayISO() };
   const opts = sel => `<option value="">— scegli —</option>` + players.map(p => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
   const n = () => f.type === 'doppio' ? 2 : 1;
 
   const draw = () => {
     modalBody.innerHTML = `
-      <div class="modal-head"><h2>Nuova partita</h2><button class="icon-btn" data-close>✕</button></div>
+      <div class="modal-head"><h2>${edit ? '✏️ Modifica partita' : 'Nuova partita'}</h2><button class="icon-btn" data-close>✕</button></div>
       <div class="seg" style="margin-top:10px">${Object.entries(MODES).map(([k, v]) => `<button type="button" data-type="${k}" class="${f.type === k ? 'on' : ''}">${v}</button>`).join('')}</div>
       <div class="teams-grid">
         ${['A', 'B'].map(T => `<div class="team-box"><h3>${T === 'A' ? 'Squadra A' : 'Squadra B'}</h3>
@@ -459,7 +469,7 @@ function openNewMatch() {
         <span><b>💨 C'era vento</b><br><span class="small">Punti vinti e persi × ${settings().windFactor}</span></span></label>
       <label>Data</label><input type="date" id="mdate" value="${f.date}" max="${todayISO()}">
       <div id="preview" class="preview hidden"></div>
-      <div class="btns"><button class="btn block" id="saveMatch" data-busy>Salva partita</button></div>`;
+      <div class="btns"><button class="btn block" id="saveMatch" data-busy>${edit ? 'Salva modifiche' : 'Salva partita'}</button></div>`;
     updatePreview();
   };
 
@@ -478,14 +488,15 @@ function openNewMatch() {
     if (!sets.length) return { err: 'Inserisci almeno un set' };
     const t = tally(sets);
     if (t.setsA === t.setsB) return { err: 'Set in parità: serve un vincitore' };
-    return { match: { id: uid(), type: f.type, teamA: A, teamB: B, sets, wind: f.wind, date: f.date || todayISO(), createdAt: Date.now() } };
+    const base = edit ? { id: edit.id, createdAt: edit.createdAt, editedAt: Date.now() } : { id: uid(), createdAt: Date.now() };
+    return { match: { ...base, type: f.type, teamA: A, teamB: B, sets, wind: f.wind, date: f.date || todayISO() } };
   };
 
   function updatePreview() {
     const box = $('#preview'); if (!box) return;
     const v = validate();
     if (v.err) { box.classList.add('hidden'); return; }
-    const sim = computeRatings({ ...state.data, matches: [...state.data.matches, v.match] });
+    const sim = computeRatings({ ...state.data, matches: [...state.data.matches.filter(x => x.id !== v.match.id), v.match] });
     const d = sim.deltas[v.match.id];
     const cur = ratings()[f.type];
     box.classList.remove('hidden');
@@ -510,8 +521,16 @@ function openNewMatch() {
     else if (el.id === 'saveMatch') {
       const v = validate(); if (v.err) return toast(v.err, true);
       const m = v.match, t = tally(m.sets);
-      const ok = await mutate(d => { if (!d.matches.some(x => x.id === m.id)) d.matches.push(m); },
-        `${MODES[m.type]}: ${m.teamA.map(pname).join('+')} ${t.setsA}-${t.setsB} ${m.teamB.map(pname).join('+')}${m.wind ? ' (vento)' : ''}`, 'Partita salvata 🏓');
+      const desc = `${MODES[m.type]}: ${m.teamA.map(pname).join('+')} ${t.setsA}-${t.setsB} ${m.teamB.map(pname).join('+')}${m.wind ? ' (vento)' : ''}`;
+      if (edit) {
+        let found = true;
+        const ok = await mutate(d => { const i = d.matches.findIndex(x => x.id === m.id); if (i >= 0) d.matches[i] = m; else found = false; },
+          `Modifica partita → ${desc}`, 'Partita modificata ✓');
+        if (ok && !found) toast('La partita era stata eliminata da qualcun altro', true);
+        if (ok) modal.close();
+        return;
+      }
+      const ok = await mutate(d => { if (!d.matches.some(x => x.id === m.id)) d.matches.push(m); }, desc, 'Partita salvata 🏓');
       if (ok) { modal.close(); state.mode = m.type; go('ranking'); }
     }
   };
@@ -647,13 +666,14 @@ document.querySelector('.tabbar').onclick = e => { const b = e.target.closest('b
 $('#fab').onclick = () => { if (!needsUnlock()) openNewMatch(); };
 $('#refreshBtn').onclick = () => refresh();
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-mode],[data-player],[data-close],[data-del-match],[data-goto],[data-unlock]');
+  const t = e.target.closest('[data-mode],[data-player],[data-close],[data-del-match],[data-edit-match],[data-goto],[data-unlock]');
   if (!t) return;
   if (t.dataset.unlock !== undefined) { e.preventDefault(); openUnlock(); }
   else if (t.dataset.goto) { e.preventDefault(); go(t.dataset.goto); }
   else if (t.dataset.mode && !modal.open) { state.mode = t.dataset.mode; render(); }
   else if (t.dataset.close !== undefined) modal.close();
   else if (t.dataset.player && !modal.open) openPlayer(t.dataset.player);
+  else if (t.dataset.editMatch && !modal.open) { if (!needsUnlock()) openNewMatch(t.dataset.editMatch); }
   else if (t.dataset.delMatch) {
     const m = state.data.matches.find(x => x.id === t.dataset.delMatch); if (!m) return;
     const tl = tally(m.sets);
