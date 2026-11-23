@@ -158,6 +158,25 @@
       ],
       "wind": false,
       "date": "2026-11-23"
+    },
+    {
+      "id": "mwtcz2hqgqigx",
+      "createdAt": 1795443955550,
+      "type": "singolo",
+      "teamA": [
+        "mwm5a5k4k92g1"
+      ],
+      "teamB": [
+        "mwm85mtjdkyxv"
+      ],
+      "sets": [
+        [
+          12,
+          21
+        ]
+      ],
+      "wind": false,
+      "date": "2026-11-23"
     }
   ]
 }
