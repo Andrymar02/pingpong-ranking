@@ -177,6 +177,25 @@
       ],
       "wind": false,
       "date": "2026-11-23"
+    },
+    {
+      "id": "mwuthca7uc9cy",
+      "createdAt": 1795532148079,
+      "type": "singolo",
+      "teamA": [
+        "mwm5a5k4k92g1"
+      ],
+      "teamB": [
+        "mwm6wrs1rkhv4"
+      ],
+      "sets": [
+        [
+          32,
+          30
+        ]
+      ],
+      "wind": false,
+      "date": "2026-11-24"
     }
   ]
 }
